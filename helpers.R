@@ -1,3 +1,17 @@
+inst_dependencies <- function() {
+  print("Checking for dependencies...")
+  dep <- c("shiny", "shinythemes", "pdftools",
+           "tidyverse", "stringr")
+  needed <- setdiff(dep, rownames(installed.packages()))
+  
+  if (identical(needed, character(0)) == FALSE) {
+    print("Installing necessary packages...")
+    install.packages(needed)
+  } else {
+    print("Packages already installed.")
+  }
+}
+
 clean_forearm <- function(raw) {
   patientName <- str_trim(str_extract_all(raw, "(?<=Nome: ).+(?=Sexo)"), side="both")
   examDate <- str_extract_all(raw, "(?<=Data da varredura: ).+(?= ID)")
@@ -109,6 +123,7 @@ clean_wb <- function(raw) {
   raw <- reduce(raw, c)
   raw <- str_replace(raw, "Imagem não destinada a diagnóstico", "")
   raw <- str_replace(raw, "318 x 150", "")
+  raw <- str_replace(raw, "Resumo dos resultados de DXA:", "")
   
   table_start <- str_which(raw, "Região")
   table_end <- str_which(raw, "Total")
@@ -123,45 +138,17 @@ clean_wb <- function(raw) {
     slice(-1) |> 
     select(2:4)
   
-  bracos <- all |> slice(1:2)  
+  z = all[12,2]
+  AM = all[12,3]
   
-  bracos_clean <- as.data.frame(str_split_fixed(bracos$`Região`, " {1,}", 5)) |> 
-    mutate(`Região` = paste(V1, V2),
-           zscore = c(NA, NA),
-           AM = c(NA, NA)) |> 
-    select(6, 3, 4, 5, 7, 8) |> 
-    `colnames<-`(c("Região", "Área", "CMO", "DMO", "zscore", "AM"))
+  all[12,2] = ""
+  all[12,3] = ""
   
-  cost_coluna <- all |> slice(3:6)
-  
-  cost_coluna_clean <- as.data.frame(str_split_fixed(cost_coluna$`Região`, " {1,}", 3)) |> 
-    bind_cols(as.data.frame(str_split_fixed(cost_coluna$`Área`, " {1,}", 2))) |> 
-    mutate(`Região` = paste(`V1...1`, `V2...2`),
-           zscore = NA,
-           AM = NA) |> 
-    select(`Região`, 3, 4, 5, 7, 8) |> 
-    `colnames<-`(c("Região", "Área", "CMO", "DMO", "zscore", "AM"))
-  
-  pelve <- all |> slice(7) |> 
-    separate(`Área`, c("Área", "CMO", "DMO"), " ") |>
-    select(-CMO.DMO) |> 
-    mutate(zscore = NA,
-           AM = NA)
-  
-  perna <- all |> slice(8:9) |> 
-    separate(`Região`, c("reg1", "reg2", "Área", "CMO", "DMO"), " ") |> 
-    mutate(`Região` = paste(reg1, reg2),
-           zscore = NA,
-           AM = NA) |> 
-    select(`Região`, `Área`, CMO, DMO, zscore, AM)
-  
-  rest <- all |> slice(10:12) |> 
-    rename("zscore" = "Área", "AM" = "CMO.DMO") |> 
-    separate(`Região`, c("Região", "Área", "CMO", "DMO"), " ") |> 
-    mutate(across(everything(), ~ifelse(.=="", NA_real_, as.character(.))))
-  
-  data_table <- reduce(list(bracos_clean, cost_coluna_clean, pelve, perna, rest),
-                       full_join) |> 
+  data_table = as.data.frame(str_split_fixed(
+    str_trim(apply(all, 1, paste, collapse=" ")), "\\s+(?=\\d)", 4)) |>
+    mutate(zscore = ifelse(V1 == "Total", z, NA_real_),
+           AM = ifelse(V1 == "Total", AM, NA_real_)) |> 
+    `colnames<-`(c("Região", "Área", "CMO", "DMO", "zscore", "AM")) |> 
     mutate(paciente = patientName,
            data = examDate,
            varredura = examScan)
@@ -306,3 +293,6 @@ QA_tab <- tabPanel("Dúvidas frequentes",
             Caso você tenha encontrado um erro que eu não encontrei, por favor me envie os detalhes para que eu possa arrumar (se eu conseguir!)."),
          br(),
          helpText("Caso tenha outras dúvidas, fique a vontade para me contatar: gabriel.perri.esteves@usp.br"))
+
+####
+

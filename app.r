@@ -1,4 +1,7 @@
 source("helpers.R")
+
+inst_dependencies()
+
 library(shiny)
 library(pdftools)
 library(tidyverse)
@@ -44,12 +47,24 @@ ui <- navbarPage(theme = shinytheme("sandstone"), "PDF to Table app",
                       "Coluna" = "spine",
                       "Corpo total" = "wb",
                       "Antebraço" = "forearm",
-                      "Composição Corporal (1 Tabela)" = "comp",
-                      "Composição Corporal (3 Tabelas)" = "comp_2"), selected = character(0))
+                      "Composição Corporal (1 Tabela)" = "comp"),
+                     # "Composição Corporal (3 Tabelas)" = "comp_2"), removed for the time being due to being tricky
+                    selected = character(0))
       ),
       
       conditionalPanel(
         condition = "input.scan_region_hologic != 'none'",
+        br(),
+        radioButtons(
+          "df_shape", "Formato da planilha:",
+          choices=c("Original (assim como é no exame)" = "original",
+            "'Wide' (uma coluna por variável [Recomendado])" = "wide"),
+          selected=character(0)
+        )
+      ),
+      
+      conditionalPanel(
+        condition = "input.df_shape == 'original' | input.df_shape == 'wide'",
         br(),
         fileInput("file1", label="Selecione seu(s) PDF(s)",
                   multiple = TRUE,
@@ -105,6 +120,28 @@ server <- function(input, output) {
       map_df(raw, clean_comp)
     } else if (input$scan_region_hologic == "comp_2") {
       map_df(raw, clean_comp_2_t1)
+    }
+
+    if (input$df_shape == "wide") {
+      if (input$scan_region_hologic == "comp") {
+        final_table_mult <- final_table_mult |> 
+          mutate(across(CMO:Porcentagem_gordura, as.numeric)) |>
+          pivot_longer(cols=c(CMO:Porcentagem_gordura), names_to = "variable", values_to = "value") |>
+          pivot_wider(names_from=c("Região", "variable"), values_from="value")
+      } else if (input$scan_region_hologic == "wb") {
+        final_table_mult <- final_table_mult |> 
+          mutate(across(`Área`:AM, as.numeric)) |>
+          pivot_longer(cols=c(`Área`:AM), names_to = "variable", values_to = "value") |>
+          pivot_wider(names_from=c("Região", "variable"), values_from="value") |> 
+          select(everything(), -ends_with(c("_zscore", "_AM")), "Total_zscore", "Total_AM")
+      } else {
+        final_table_mult <- final_table_mult |>
+          mutate(across(area:AM, as.numeric)) |>
+          pivot_longer(cols=c(area:AM), names_to = "variable", values_to = "value") |>
+          pivot_wider(names_from=c("regiao", "variable"), values_from="value")
+      }
+    } else {
+      final_table_mult
     }
   })
   
